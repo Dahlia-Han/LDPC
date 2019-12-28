@@ -15,19 +15,19 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="CheckMatrix.cpp">
+      <Filter>源文件</Filter>
+    </CudaCompile>
+    <CudaCompile Include="LdpcLib.h">
+      <Filter>头文件</Filter>
+    </CudaCompile>
+    <CudaCompile Include="LdpcLib.cpp">
+      <Filter>源文件</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="CheckMatrix.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="LdpcLib.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="LdpcLib.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="CheckMatrix.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
   </ItemGroup>
 </Project>

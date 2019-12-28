@@ -40,7 +40,7 @@ int main(int argc, char* argv[])
 	}
 	else
 	{
-
+		Main_GPU(argc, argv);
 	}
 
 

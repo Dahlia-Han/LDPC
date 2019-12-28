@@ -8,3 +8,5 @@
 void DisplayHelp(void);
 
 void Main_CPU(int argc, char* argv[]);
+
+void Main_GPU(int argc, char* argv[]);

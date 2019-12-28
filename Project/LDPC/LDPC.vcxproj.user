@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LocalDebuggerCommandArguments>K128R0.4.txt out.txt -DecodeMethod LogBP -PBitNum 44 -Rate 0.4</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>K128R0.4.txt out.txt -DecodeMethod BP -PBitNum 44 -Rate 0.4 -GPU -MemoryLimit 40</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
