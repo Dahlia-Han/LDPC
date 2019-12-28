@@ -5,6 +5,11 @@ VisualStudioVersion = 16.0.29613.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LDPC_Lib", "LDPC_Lib\LDPC_Lib.vcxproj", "{ED89A826-A06A-4D29-A5A6-31DEB4200EF2}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LDPC", "LDPC\LDPC.vcxproj", "{7B43F239-15A0-442F-AE78-8091CED0C1C4}"
+	ProjectSection(ProjectDependencies) = postProject
+		{ED89A826-A06A-4D29-A5A6-31DEB4200EF2} = {ED89A826-A06A-4D29-A5A6-31DEB4200EF2}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +26,14 @@ Global
 		{ED89A826-A06A-4D29-A5A6-31DEB4200EF2}.Release|x64.Build.0 = Release|x64
 		{ED89A826-A06A-4D29-A5A6-31DEB4200EF2}.Release|x86.ActiveCfg = Release|Win32
 		{ED89A826-A06A-4D29-A5A6-31DEB4200EF2}.Release|x86.Build.0 = Release|Win32
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Debug|x64.ActiveCfg = Debug|x64
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Debug|x64.Build.0 = Debug|x64
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Debug|x86.ActiveCfg = Debug|Win32
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Debug|x86.Build.0 = Debug|Win32
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Release|x64.ActiveCfg = Release|x64
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Release|x64.Build.0 = Release|x64
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Release|x86.ActiveCfg = Release|Win32
+		{7B43F239-15A0-442F-AE78-8091CED0C1C4}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
