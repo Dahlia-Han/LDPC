@@ -252,13 +252,13 @@ void Main_GPU(int argc, char* argv[])
 			printf("EbN0=%.2f, ErrorBits=%I64d, TransBits=%I64d, ErrorFrames=%I64d, TransFrames=%I64d, BER=%.2e, FER=%.2e, BP, Time=%.1fs\n", ebn0,
 				ErrorBits, TransBits, ErrorFrames, TransFrames, ErrorBits / (double)TransBits, ErrorFrames / (double)TransFrames, (clock() - Point_Time) / (double)CLOCKS_PER_SEC);
 		}
-		/*else if (strcmp(DecodeMethod, "LogBP") == 0)
+		else if (strcmp(DecodeMethod, "LogBP") == 0)
 		{
-			LdpcSimulation_LogBP(matrix, Seed, ebn0, Rate, MinError, MaxTrans, MaxITR, NumPunchBits, isExitBeforeMaxItr, ExitMethod,
+			LdpcSimulation_GPU_LogBP(matrix, Seed, ebn0, Rate, MinError, MaxTrans, MaxITR, NumPunchBits, ExitMethod, MemoryLimit,
 				ErrorBits, TransBits, ErrorFrames, TransFrames);
 			printf("EbN0=%.2f, ErrorBits=%I64d, TransBits=%I64d, ErrorFrames=%I64d, TransFrames=%I64d, BER=%.2e, FER=%.2e, LogBP, Time=%.1fs\n", ebn0,
 				ErrorBits, TransBits, ErrorFrames, TransFrames, ErrorBits / (double)TransBits, ErrorFrames / (double)TransFrames, (clock() - Point_Time) / (double)CLOCKS_PER_SEC);
-		}*/
+		}
 		else
 		{
 			printf("尚未实现该算法，请重新确认...\n");

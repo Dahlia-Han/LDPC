@@ -395,6 +395,129 @@ __global__ void LdpcDecodeBP_Decide(const uint32_t ParallelFrames, const uint32_
 		Decode_d[idx] = 0;
 }
 
+void LdpcDecode_GPU_LogBP(const CheckMatrix_GPU& matrix, const uint32_t FrameLength, const float sigma, const uint32_t MaxItr, const float* Signal, uint8_t* Decode)
+{
+	uint32_t Blocks = 0;
+	uint32_t ThreadsPerBlock = 128;
+
+
+	// 变量声明
+	float* Signal_d = nullptr, * ci_d = nullptr, * qij_d = nullptr, * rji_d = nullptr;
+	uint8_t* Decode_d = nullptr;
+
+
+	// 变量初始化
+	cudaMalloc(&Signal_d, FrameLength * (__int64)matrix.Col * sizeof(float));
+	cudaMalloc(&ci_d, FrameLength * (__int64)matrix.Col * sizeof(float));
+	cudaMalloc(&qij_d, FrameLength * (__int64)matrix.NonZerosNum * sizeof(float));
+	cudaMalloc(&rji_d, FrameLength * (__int64)matrix.NonZerosNum * sizeof(float));
+	cudaMalloc(&Decode_d, FrameLength * (__int64)matrix.Col * sizeof(uint8_t));
+
+
+	// 变量赋值
+	cudaMemcpy(Signal_d, Signal, FrameLength * (__int64)matrix.Col * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemset(ci_d, 0, FrameLength * (__int64)matrix.Col * sizeof(float));
+	cudaMemset(qij_d, 0, FrameLength * (__int64)matrix.NonZerosNum * sizeof(float));
+	cudaMemset(rji_d, 0, FrameLength * (__int64)matrix.NonZerosNum * sizeof(float));
+	cudaMemset(Decode_d, 0, FrameLength * (__int64)matrix.Col * sizeof(uint8_t));
+
+
+	Blocks = ceil(FrameLength * (__int64)matrix.Col / (double)ThreadsPerBlock);
+	LdpcDecodeLogBP_CiInit << <Blocks, ThreadsPerBlock >> > (FrameLength, matrix.Col, sigma, Signal_d, ci_d);
+
+
+	Blocks = ceil(FrameLength * (__int64)matrix.NonZerosNum / (double)ThreadsPerBlock);
+	LdpcDecodeLogBP_QiInit << <Blocks, ThreadsPerBlock >> > (FrameLength, matrix.NonZerosNum, matrix.Col, matrix.H_IdxCol_d, ci_d, qij_d);
+
+
+	// 迭代
+	Blocks = ceil(FrameLength * matrix.NonZerosNum / (double)ThreadsPerBlock);
+	for (uint32_t itr = 0; itr < MaxItr; itr++)
+	{
+		// 正常迭代		
+		LdpcDecodeLogBP_UpdateRji << <Blocks, ThreadsPerBlock >> > (FrameLength, matrix.NonZerosNum, matrix.IdxConnectQij_d, matrix.IdxConnectQij_idx_d, qij_d, rji_d);
+		LdpcDecodeLogBP_UpdateQij << <Blocks, ThreadsPerBlock >> > (FrameLength, matrix.NonZerosNum, matrix.Col, matrix.H_IdxCol_d, matrix.IdxConnectRji_d, matrix.IdxConnectRji_idx_d,
+			ci_d, rji_d, qij_d);
+	}
+
+
+	Blocks = ceil(FrameLength * matrix.Col / (double)ThreadsPerBlock);
+	LdpcDecodeLogBP_Decide << <Blocks, ThreadsPerBlock >> > (FrameLength, matrix.Col, matrix.NonZerosNum, rji_d, ci_d, matrix.H_IdxCol_d, Decode_d);
+	cudaMemcpy(Decode, Decode_d, FrameLength * (__int64)matrix.Col * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
+
+	cudaFree(Signal_d);
+	cudaFree(ci_d);
+	cudaFree(qij_d);
+	cudaFree(rji_d);
+	cudaFree(Decode_d);
+}
+
+__global__ void LdpcDecodeLogBP_CiInit(const uint32_t ParallelFrames, const uint32_t Col, const float sigma, const float* Signal_d, float* ci_d)
+{
+	uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= ParallelFrames * Col)
+		return;
+	ci_d[idx] = -2 * Signal_d[idx] / (sigma * sigma);
+}
+
+__global__ void LdpcDecodeLogBP_QiInit(const uint32_t ParallelFrames, const uint32_t NonZerosNum, const uint32_t Col, const uint32_t* IdxCol_d, const float* ci_d, float* qij_d)
+{
+	uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= ParallelFrames * NonZerosNum)
+		return;
+	uint32_t frame = idx / NonZerosNum;
+	qij_d[idx] = ci_d[frame * Col + IdxCol_d[idx % NonZerosNum]];
+}
+
+__global__ void LdpcDecodeLogBP_UpdateRji(const uint32_t ParallelFrames, const uint32_t NonZerosNum, const uint32_t* IdxConnectQij_d, const uint32_t* Qij_idx_d, const float* qij_d, float* rji_d)
+{
+	uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= ParallelFrames * NonZerosNum)
+		return;
+	uint32_t frame = idx / NonZerosNum;
+
+	float s = 1;
+	for (uint32_t i = Qij_idx_d[(idx % NonZerosNum) * 2]; i < Qij_idx_d[2 * (idx % NonZerosNum) + 1]; i++)
+		s = s * tanh(qij_d[frame * NonZerosNum + IdxConnectQij_d[i]] / 2);
+	rji_d[idx] = 2 * atanh(s);
+}
+
+__global__ void LdpcDecodeLogBP_UpdateQij(const uint32_t ParallelFrames, const uint32_t NonZerosNum, const uint32_t Col, const uint32_t* IdxCol_d, const uint32_t* IdxConnectRji_d, const uint32_t* Rji_idx_d, const float* ci_d, const float* rji_d, float* qij_d)
+{
+	uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= ParallelFrames * NonZerosNum)
+		return;
+	uint32_t frame = idx / NonZerosNum;
+
+	float s = 0;
+	for (uint32_t i = Rji_idx_d[(idx % NonZerosNum) * 2]; i < Rji_idx_d[(idx % NonZerosNum) * 2 + 1]; i++)
+		s += rji_d[frame * NonZerosNum + IdxConnectRji_d[i]];
+	qij_d[idx] = ci_d[frame * Col + IdxCol_d[idx % NonZerosNum]] + s;
+	if (qij_d[idx] > 1e12)
+		qij_d[idx] = 1e12;
+	if (qij_d[idx] < -1e12)
+		qij_d[idx] = -1e12;
+}
+
+__global__ void LdpcDecodeLogBP_Decide(const uint32_t ParallelFrames, const uint32_t Col, const uint32_t NumOfNonzero, const float* rji_d, const float* ci_d, const uint32_t* IdxCol_d, uint8_t* Decode_d)
+{
+	uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= ParallelFrames * Col)
+		return;
+
+	uint32_t frame = idx / Col;
+	float s = 0;
+	for (uint32_t j = 0; j < NumOfNonzero; j++)
+		if (IdxCol_d[j] == idx % Col)
+			s += rji_d[frame * NumOfNonzero + j];
+	s += ci_d[frame * Col + idx % Col];
+	if (s < 0)
+		Decode_d[idx] = 1;
+	else
+		Decode_d[idx] = 0;
+}
+
 bool LdpcSimulation_BP(const CheckMatrix& matrix, const uint64_t Seed, const float EbN0indB, const float Rate,
 	const uint64_t MinError, const uint64_t MaxTrans, const uint32_t MaxITR, const uint64_t NumPunchBits, 
 	const bool isExitBeforeMaxItr, const uint32_t ExitMethod,
@@ -652,5 +775,101 @@ bool LdpcSimulation_LogBP(const CheckMatrix& matrix, const uint64_t Seed, const 
 	delete[]Code;
 	delete[]Signal;
 	delete[]Decode;
+	return true;
+}
+
+bool LdpcSimulation_GPU_LogBP(const CheckMatrix_GPU& matrix, const uint64_t Seed, const float EbN0indB, const float Rate, const uint64_t MinError, const uint64_t MaxTrans, const uint32_t MaxITR, const uint64_t NumPunchBits, const uint32_t ExitMethod, const float MemoryLimit, uint64_t& ErrorBits, uint64_t& TransBits, uint64_t& ErrorFrames, uint64_t& TransFrames)
+{
+	srand(Seed);
+
+	ErrorBits = 0;
+	TransBits = 0;
+	ErrorFrames = 0;
+	TransFrames = 0;
+	uint64_t error = 0;
+	uint64_t Remain = MaxTrans;
+	float sigma = sqrt(1 / (pow(10.0, EbN0indB / 10) * Rate) / 2.0);
+
+	uint64_t curFrame = 2;
+	uint64_t Memory = 0;
+	time_t Time_Start = clock();
+	time_t Time_Print = clock();
+	while (Remain > 0)
+	{
+		// 计算当前循环中并行帧数
+		if (curFrame > ((ExitMethod > 0) ? (ceil(Remain / matrix.Col)) : Remain))
+			curFrame = Remain;
+		Memory = matrix.GPU_Memory;
+
+		// 分配空间
+		uint32_t ParallelFrames = curFrame;
+		uint8_t* Code = new uint8_t[matrix.Col * (__int64)ParallelFrames];
+		float_t* Signal = new float[matrix.Col * (__int64)ParallelFrames];
+		uint8_t* Decode = new uint8_t[matrix.Col * (__int64)ParallelFrames];
+
+		// 加噪并译码
+		memset(Code, 0, matrix.Col * (__int64)ParallelFrames * sizeof(uint8_t));
+		AddAWGN(matrix.Col * (__int64)ParallelFrames, Rate, sigma, Code, Signal);
+		if (NumPunchBits > 0)
+			PunchBits(ParallelFrames, matrix.Col, NumPunchBits, Signal);
+		LdpcDecode_GPU_LogBP(matrix, ParallelFrames, sigma, MaxITR, Signal, Decode);
+
+		// 内存占用统计
+		Memory += ParallelFrames * (__int64)matrix.Col * sizeof(uint8_t) * 3;
+		Memory += ParallelFrames * (__int64)matrix.Col * sizeof(float) * 3;
+		Memory += ParallelFrames * (__int64)matrix.NonZerosNum * sizeof(float) * 2;
+
+		// 错误统计
+		for (uint32_t p = 0; p < ParallelFrames; p++)
+		{
+			error = 0;
+			for (uint32_t i = 0; i < matrix.Col; i++)
+				error += Decode[p * matrix.Col + i];
+			ErrorBits += error;
+			if (error != 0)
+				ErrorFrames++;
+		}
+		TransBits += matrix.Col * ParallelFrames;
+		TransFrames += ParallelFrames;
+
+		delete[]Code;
+		delete[]Signal;
+		delete[]Decode;
+
+		Remain -= (ExitMethod == 0) ? (curFrame) : (curFrame * matrix.Col);
+		double ConsumeTime = (clock() - Time_Start) / (double)CLOCKS_PER_SEC;
+
+		if ((clock() - Time_Print) / (double)CLOCKS_PER_SEC > 0.5)
+		{
+			printf("Remain=%I64d, BER=%.3e, FER=%.3e, Error=%I64d, Trans=%I64d, GpuMemory=%.2fMByte, Throughput=%.3fMbps, RemainTime %.2fs/%.2fs.\r",
+				Remain, ErrorBits / (double)TransBits, ErrorFrames / (double)TransFrames,
+				(ExitMethod > 0) ? ErrorBits : ErrorFrames, (ExitMethod > 0) ? TransBits : TransFrames,
+				Memory / 1024.0 / 1024.0,
+				TransBits / ConsumeTime / 1024 / 1024,
+				ConsumeTime / ((ExitMethod > 0) ? ErrorBits : ErrorFrames)* (MinError - ((ExitMethod > 0) ? ErrorBits : ErrorFrames)),
+				ConsumeTime / TransFrames * Remain);
+			Time_Print = clock();
+		}
+
+		if (Memory < (MemoryLimit * 1024 * 1024))
+			curFrame = ceil(curFrame * 1.1);
+		else
+			curFrame = ceil(curFrame / 1.005);
+		if (ExitMethod == 0)
+		{
+			if (ErrorFrames > MinError)
+				break;
+		}
+		else
+		{
+			if (ErrorBits > MinError)
+				break;
+		}
+	}
+
+	// 初始化码字、信号、译码结果存储空间
+	uint8_t* Code = new uint8_t[matrix.Col];
+	float_t* Signal = new float[matrix.Col];
+	uint8_t* Decode = new uint8_t[matrix.Col];
 	return true;
 }
