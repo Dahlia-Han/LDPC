@@ -163,6 +163,95 @@ void LdpcDecode_BP(const CheckMatrix& matrix, const float sigma, const uint32_t 
 	delete[]rji1;
 }
 
+void LdpcDecode_LogBP(const CheckMatrix& matrix, const float sigma, const uint32_t MaxItr, const bool isExitBeforeMaxItr, const float* Signal, uint8_t* Decode)
+{
+	// 变量声明
+	float* ci = nullptr, * qij = nullptr, * rji = nullptr;
+	ci = new float[matrix.Col];
+	qij = new float[matrix.NonZerosNum];
+	rji = new float[matrix.NonZerosNum];
+	uint8_t* decode = new uint8_t[matrix.Col];
+	uint32_t* check = new uint32_t[matrix.Row];
+	memset(ci, 0, matrix.Col * sizeof(float));
+	memset(qij, 0, matrix.NonZerosNum * sizeof(float));
+	memset(rji, 0, matrix.NonZerosNum * sizeof(float));
+
+	// 初始化 ci/qij
+	for (uint32_t i = 0; i < matrix.Col; i++)
+		ci[i] = -2.0 * Signal[i] / (sigma * sigma);
+	for (uint32_t i = 0; i < matrix.NonZerosNum; i++)
+		qij[i] = ci[matrix.H_IdxCol[i]];
+
+	// 迭代过程
+	for (uint32_t itr = 0; itr < MaxItr; itr++)
+	{
+		// 更新rji
+		for (uint32_t i = 0; i < matrix.NonZerosNum; i++)
+		{
+			float s = 1;
+			for (uint32_t j = matrix.IdxConnectQij_idx[i * 2]; j < matrix.IdxConnectQij_idx[2 * i + 1]; j++)
+				s = s * tanh(qij[matrix.IdxConnectQij[j]] / 2);
+			rji[i] = 2 * atanh(s);
+		}
+
+		// 更新qij
+		for (uint32_t i = 0; i < matrix.NonZerosNum; i++)
+		{
+			float s = 0;
+			for (uint32_t j = matrix.IdxConnectRji_idx[i * 2]; j < matrix.IdxConnectRji_idx[i * 2 + 1]; j++)
+				s += rji[matrix.IdxConnectRji[j]];
+			qij[i] = ci[matrix.H_IdxCol[i]] + s;
+			if (qij[i] > 1e12)
+				qij[i] = 1e12;
+			if (qij[i] < -1e12)
+				qij[i] = -1e12;
+		}
+
+		// 提前退出
+		for (uint32_t i = 0; i < matrix.Col; i++)
+		{
+			float s = 0;
+			for (uint32_t j = 0; j < matrix.NonZerosNum; j++)
+				if (matrix.H_IdxCol[j] == i)
+					s += rji[j];
+			s += ci[i];
+			if (s < 0)
+				decode[i] = 1;
+			else
+				decode[i] = 0;
+		}
+		bool isExist = true;
+		memset(check, 0, matrix.Row * sizeof(uint32_t));
+		for (uint32_t i = 0; i < matrix.NonZerosNum; i++)
+			check[matrix.H_IdxRow[i]] += decode[matrix.H_IdxCol[i]];
+		for (uint32_t i = 0; i < matrix.Row; i++)
+			if (check[i] % 2 != 0)
+				isExist = false;
+		if (isExist)
+			break;
+	}
+
+	// 判决
+	for (uint32_t i = 0; i < matrix.Col; i++)
+	{
+		float s = 0;
+		for (uint32_t j = 0; j < matrix.NonZerosNum; j++)
+			if (matrix.H_IdxCol[j] == i)
+				s += rji[j];
+		s += ci[i];
+		if (s < 0)
+			Decode[i] = 1;
+		else
+			Decode[i] = 0;
+	}
+
+	delete[]decode;
+	delete[]check;
+	delete[]ci;
+	delete[]qij;
+	delete[]rji;
+}
+
 bool LdpcSimulation_BP(const CheckMatrix& matrix, const uint64_t Seed, const float EbN0indB, const float Rate,
 	const uint64_t MinError, const uint64_t MaxTrans, const uint32_t MaxITR, const uint64_t NumPunchBits, 
 	const bool isExitBeforeMaxItr, const uint32_t ExitMethod,
@@ -200,6 +289,85 @@ bool LdpcSimulation_BP(const CheckMatrix& matrix, const uint64_t Seed, const flo
 
 		// 译码
 		LdpcDecode_BP(matrix, sigma, MaxITR, isExitBeforeMaxItr, Signal, Decode);
+
+		// 错误统计
+		error = 0;
+		for (uint32_t i = 0; i < matrix.Col; i++)
+			error += Decode[i];
+		ErrorBits += error;
+		if (error != 0)
+			ErrorFrames++;
+		TransBits += matrix.Col;
+		TransFrames += 1;
+
+		if (ExitMethod == 0)
+			Remain -= 1;
+		else
+			Remain = (Remain > matrix.Col) ? (Remain - matrix.Col) : 0;
+
+		double ConsumeTime = (clock() - Time_Start) / (double)CLOCKS_PER_SEC;
+
+		if ((clock() - Time_Print) / (double)CLOCKS_PER_SEC > 0.5)
+		{
+			printf("Remain=%I64d, BER=%.3e, FER=%.3e, Error=%I64d, Trans=%I64d, RemainTime %.2fs/%.2fs.\r",
+				Remain, ErrorBits / (double)TransBits, ErrorFrames / (double)TransFrames,
+				(ExitMethod > 0) ? ErrorBits : ErrorFrames, (ExitMethod > 0) ? TransBits : TransFrames,
+				ConsumeTime / ((ExitMethod > 0) ? ErrorBits : ErrorFrames)* (MinError - ((ExitMethod > 0) ? ErrorBits : ErrorFrames)),
+				ConsumeTime / TransFrames * Remain);
+			Time_Print = clock();
+		}
+
+		if (ExitMethod == 0)
+		{
+			if (ErrorFrames > MinError)
+				break;
+		}
+		else
+		{
+			if (ErrorBits > MinError)
+				break;
+		}
+	}
+	delete[]Code;
+	delete[]Signal;
+	delete[]Decode;
+	return true;
+}
+
+bool LdpcSimulation_LogBP(const CheckMatrix& matrix, const uint64_t Seed, const float EbN0indB, const float Rate, const uint64_t MinError, const uint64_t MaxTrans, const uint32_t MaxITR, const uint64_t NumPunchBits, const bool isExitBeforeMaxItr, const uint32_t ExitMethod, uint64_t& ErrorBits, uint64_t& TransBits, uint64_t& ErrorFrames, uint64_t& TransFrames)
+{
+	srand(Seed);
+
+	ErrorBits = 0;
+	TransBits = 0;
+	ErrorFrames = 0;
+	TransFrames = 0;
+	uint64_t error = 0;
+	uint64_t Remain = MaxTrans;
+	float sigma = sqrt(1 / (pow(10.0, EbN0indB / 10) * Rate) / 2.0);
+
+	// 初始化码字、信号、译码结果存储空间
+	uint8_t* Code = new uint8_t[matrix.Col];
+	float_t* Signal = new float[matrix.Col];
+	uint8_t* Decode = new uint8_t[matrix.Col];
+
+
+	time_t Time_Start = clock();
+	time_t Time_Print = clock();
+	while (Remain > 0)
+	{
+		// 发送全零码字
+		memset(Code, 0, matrix.Col * sizeof(uint8_t));
+
+		// 加噪
+		AddAWGN(matrix.Col, Rate, sigma, Code, Signal);
+
+		// PunchBits
+		if (NumPunchBits > 0)
+			PunchBits(1, matrix.Col, NumPunchBits, Signal);
+
+		// 译码
+		LdpcDecode_LogBP(matrix, sigma, MaxITR, isExitBeforeMaxItr, Signal, Decode);
 
 		// 错误统计
 		error = 0;

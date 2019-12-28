@@ -29,8 +29,8 @@ void DisplayHelp(void)
 	printf("-PreExitBMI         -提前退出, 0 - false; 1 - true\n");
 	printf("\n");
 
-	printf("GPU仿真参数:\n");
-	printf("-GPU                -使用GPU加速\n");
+	//printf("GPU仿真参数:\n");
+	//printf("-GPU                -使用GPU加速\n");
 	printf("\n");
 }
 
@@ -120,6 +120,13 @@ void Main_CPU(int argc, char* argv[])
 			LdpcSimulation_BP(matrix, Seed, ebn0, Rate, MinError, MaxTrans, MaxITR, NumPunchBits, isExitBeforeMaxItr, ExitMethod,
 				ErrorBits, TransBits, ErrorFrames, TransFrames);
 			printf("EbN0=%.2f, ErrorBits=%I64d, TransBits=%I64d, ErrorFrames=%I64d, TransFrames=%I64d, BER=%.2e, FER=%.2e, BP, Time=%.1fs\n", ebn0,
+				ErrorBits, TransBits, ErrorFrames, TransFrames, ErrorBits / (double)TransBits, ErrorFrames / (double)TransFrames, (clock() - Point_Time) / (double)CLOCKS_PER_SEC);
+		}
+		else if (strcmp(DecodeMethod, "LogBP") == 0)
+		{
+			LdpcSimulation_LogBP(matrix, Seed, ebn0, Rate, MinError, MaxTrans, MaxITR, NumPunchBits, isExitBeforeMaxItr, ExitMethod,
+				ErrorBits, TransBits, ErrorFrames, TransFrames);
+			printf("EbN0=%.2f, ErrorBits=%I64d, TransBits=%I64d, ErrorFrames=%I64d, TransFrames=%I64d, BER=%.2e, FER=%.2e, LogBP, Time=%.1fs\n", ebn0,
 				ErrorBits, TransBits, ErrorFrames, TransFrames, ErrorBits / (double)TransBits, ErrorFrames / (double)TransFrames, (clock() - Point_Time) / (double)CLOCKS_PER_SEC);
 		}
 
